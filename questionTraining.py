@@ -4,6 +4,7 @@ import torch
 import pdfplumber
 import spacy
 import torch.nn.functional as F
+from sentence_transformers import SentenceTransformer
 # from sklearn.metrics.pairwise import cosine_similarity
 
 
@@ -17,41 +18,35 @@ with pdfplumber.open("PDFs\A Brief Overview of the History of Computers.pdf") as
     for page in pdf.pages:
         text += page.extract_text()
 
-text = text.lower()
 
+text = text.lower()
 doc = nlp(text)
 sentences = [sent.text.strip() for sent in doc.sents]
 
 
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-model = BertModel.from_pretrained("bert-base-uncased")
 
 bert_embeddings = []
 
-
-def getEmbeddings(sentence):
-    input = tokenizer(sentence, return_tensors="pt", truncation=True, padding=True, max_length=512)
-    with torch.no_grad():
-        outputs = model(**input)
-    return outputs.last_hidden_state.mean(dim=1)
-    
-
 for sentence in sentences:
-    sentence_embed = getEmbeddings(sentence)
+    sentence_embed = model.encode(sentence)
     bert_embeddings.append(sentence_embed)
 
-reference = ["what are computers"]
+reference = ["what made the first computers so special?"]
 
-reference_embed = getEmbeddings(reference[0])
+reference_embed = model.encode(reference[0])
 
-similarities = [F.cosine_similarity(reference_embed, sentence_embedding, dim=1) for sentence_embedding in bert_embeddings]
+# Calculate similarities
+similarities = [F.cosine_similarity(torch.tensor(reference_embed), torch.tensor(embed), dim=0) for embed in bert_embeddings]
 
-similarities_tensor = torch.tensor(similarities)
+# Get top-k results
+top_k = 10
+top_k_indices = torch.topk(torch.tensor(similarities), k=top_k).indices
 
-top_k = 5
-top_k_values, top_k_indices = torch.topk(similarities_tensor, k=top_k)
+# Extract relevant sentences
+relative_sentences = [sentences[idx] for idx in top_k_indices]
 
-# Print the top 5 most relevant sentences
-for i in range(top_k):
-    print(f"Rank {i+1}: {sentences[top_k_indices[i].item()]} (Similarity Score: {top_k_values[i].item():.4f})")
+print("Top-k relevant sentences:" )
+for i, sentence in enumerate(relative_sentences):
+    print(f"Sentence {i+1}: {sentence}")
